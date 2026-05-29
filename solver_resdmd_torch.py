@@ -27,8 +27,12 @@ class KoopmanNNTorch(nn.Module):
         n_layers = len(layer_sizes)
         
         self.layers.append(nn.Linear(input_size, layer_sizes[0], bias=bias))
-        for ii in arange(len(layer_sizes) - 1):
-            self.layers.append(nn.Linear(layer_sizes[ii - 1], layer_sizes[ii], bias=True))
+        # for ii in arange(len(layer_sizes) - 1):
+        #     self.layers.append(nn.Linear(layer_sizes[ii - 1], layer_sizes[ii], bias=True))
+        # Fix:
+        for ii in range(n_layers - 1):
+            self.layers.append(nn.Tanh())
+            self.layers.append(nn.Linear(layer_sizes[ii], layer_sizes[ii + 1], bias=True))
         self.layers.append(nn.Tanh())
         self.layers.append(nn.Linear(layer_sizes[n_layers - 1], n_psi_train, bias=True))
     
@@ -61,18 +65,37 @@ class KoopmanModelTorch(nn.Module):
         self.layer_K = nn.Linear(k_dim, k_dim, bias=False)
         self.layer_K.weight.requires_grad = False
         self.layer_eig= nn.Linear(k_dim, k_dim, bias=False)
-        #self.layer_eig.weight.requires_grad = False
+        self.layer_eig.weight.requires_grad = False
         self.layer_lambda_diag= nn.Linear(k_dim, k_dim, bias=False)
-        #self.layer_lambda_diag.weight.requires_grad = False
+        self.layer_lambda_diag.weight.requires_grad = False
+        # self.register_buffer('eigenvectors', 
+        #     torch.zeros(k_dim, k_dim, dtype=torch.complex128))
+        # self.register_buffer('eigenvalues_diag', 
+        #     torch.zeros(k_dim, k_dim, dtype=torch.complex128))
     
     def forward(self, input_x, input_y):
         psi_x = self.dict_net.forward(input_x)
         psi_y = self.dict_net.forward(input_y)
-        psi_x= torch.tensor(psi_x, dtype= torch.complex128)
-        psi_y= torch.tensor(psi_y, dtype= torch.complex128)
-        psi_x_v= self.layer_eig(psi_x)
-        psi_y_v= self.layer_eig(psi_y)
+        # psi_x= torch.tensor(psi_x, dtype= torch.complex128)
+        # psi_y= torch.tensor(psi_y, dtype= torch.complex128)
+        psi_x_c = torch.complex(psi_x, torch.zeros_like(psi_x))
+        psi_y_c = torch.complex(psi_y, torch.zeros_like(psi_y))
+        psi_x_v= self.layer_eig(psi_x_c)
+        psi_y_v= self.layer_eig(psi_y_c)
         psi_x_v_lambda= self.layer_lambda_diag(psi_x_v)
+        # Fixed V and Lambda (non-trainable, matches TF version)
+        # Graph-preserving cast: keeps grad connected through real part
+        # psi_x_c = torch.complex(psi_x, torch.zeros_like(psi_x))
+        # psi_y_c = torch.complex(psi_y, torch.zeros_like(psi_y))
+        # V = self.eigenvectors.detach()
+        # L = self.eigenvalues_diag.detach()
+
+        # psi_x_v = torch.matmul(psi_x_c, V)
+        # psi_y_v = torch.matmul(psi_y_c, V)
+        # psi_x_v_lambda = torch.matmul(psi_x_v, L)
+        # psi_x_v = torch.matmul(psi_x, self.eigenvectors)
+        # psi_y_v = torch.matmul(psi_y, self.eigenvectors)
+        # psi_x_v_lambda = torch.matmul(psi_x_v, self.eigenvalues_diag)
         
         #psi_next = self.layer_K(psi_x)
         outputs_complex =psi_y_v- psi_x_v_lambda
@@ -316,9 +339,13 @@ class KoopmanSolverTorch(object):
                 self.koopman_model.layer_K.weight.data = self.K
                 self.koopman_model.layer_eig.weight.data= torch.tensor(self.eigenvectors, dtype= torch.complex128).to(device)
                 self.koopman_model.layer_lambda_diag.weight.data = torch.tensor(np.diag(self.eigenvalues), dtype= torch.complex128).to(device)
+                # self.koopman_model.eigenvectors.copy_(
+                #     torch.tensor(self.eigenvectors, dtype=torch.complex128))
+                # self.koopman_model.eigenvalues_diag.copy_(
+                #     torch.tensor(np.diag(self.eigenvalues), dtype=torch.complex128))
                
             # Two steps for training PsiNN
-            curr_losses, curr_best_loss = self.train_psi(self.koopman_model, self.koopman_optimizer, epochs=4, lr=curr_lr, initial_loss=curr_last_loss)
+            curr_losses, curr_best_loss = self.train_psi(self.koopman_model, self.koopman_optimizer, epochs=2, lr=curr_lr, initial_loss=curr_last_loss)
             
             if curr_last_loss > curr_best_loss:
                 curr_last_loss = curr_best_loss

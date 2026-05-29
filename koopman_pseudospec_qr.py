@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 
 
-def  KoopPseudoSpecQR(PX,PY,W,z_pts):
+def KoopPseudoSpecQR(PX,PY,W,z_pts):
     Q, R= la.qr(sqrt(W)*PX)
     C1 = np.matmul((np.sqrt(W)*PY),la.inv(R))
     
