@@ -13,7 +13,7 @@ import warnings
 # Settings the warnings to be ignored 
 warnings.filterwarnings('ignore') 
 
-device = 'cuda'
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.set_default_dtype(torch.float64)
 
 class KoopmanNNTorch(nn.Module):
